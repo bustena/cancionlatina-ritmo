@@ -1,357 +1,145 @@
-const CSV_URL =
-  "https://docs.google.com/spreadsheets/d/e/2PACX-1vSJM_fPxtlc5UEyNf0DHLNg5B4tGIm8Qbba3k78kbQDRj9a9jGpSDRHwz_UOgAz4jbpcRJKHEUe1eNY/pub?gid=1431457859&single=true&output=csv";
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSJM_fPxtlc5UEyNf0DHLNg5B4tGIm8Qbba3k78kbQDRj9a9jGpSDRHwz_UOgAz4jbpcRJKHEUe1eNY/pub?gid=1431457859&single=true&output=csv";
 
-const statusEl = document.getElementById("status");
-const contentEl = document.getElementById("content");
+const status = document.getElementById("status");
+const content = document.getElementById("content");
+
 const titleEl = document.getElementById("title");
 const textEl = document.getElementById("text");
 const imageEl = document.getElementById("image");
 
-const buttons = {
-  audio_01: document.getElementById("btn-audio-1"),
-  audio_02: document.getElementById("btn-audio-2"),
-  audio_03: document.getElementById("btn-audio-3")
-};
+const b1 = document.getElementById("b1");
+const b2 = document.getElementById("b2");
+const b3 = document.getElementById("b3");
 
-let audioContext = null;
-let audioBuffers = {
-  audio_01: null,
-  audio_02: null,
-  audio_03: null
-};
+let ctx;
+let buffers = [];
+let gains = [];
+let sources = [];
 
-let trackState = {
-  audio_01: { active: false, source: null },
-  audio_02: { active: false, source: null },
-  audio_03: { active: false, source: null }
-};
+let started = false;
+let startTime = 0;
+let pausedOffset = 0;
+let duration = 0;
 
-let masterClock = {
-  isRunning: false,
-  startContextTime: 0,
-  pausedOffset: 0,
-  duration: 0
-};
-
-function getRequestedId() {
-  const params = new URLSearchParams(window.location.search);
-  return (params.get("id") || "").trim();
-}
-
-function normalize(value) {
-  return (value || "").trim().toLowerCase();
-}
-
-function parseCSVLine(line) {
-  const values = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const next = line[i + 1];
-
-    if (char === '"') {
-      if (inQuotes && next === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (char === "," && !inQuotes) {
-      values.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-
-  values.push(current);
-  return values;
+function getId() {
+  return new URLSearchParams(location.search).get("id");
 }
 
 function parseCSV(text) {
-  const lines = text
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(line => line !== "");
-
-  if (lines.length < 2) return [];
-
-  const headers = parseCSVLine(lines[0]).map(h => h.trim());
+  const lines = text.trim().split("\n");
+  const headers = lines[0].split(",");
 
   return lines.slice(1).map(line => {
-    const cols = parseCSVLine(line);
-    const row = {};
-
-    headers.forEach((header, index) => {
-      row[header] = (cols[index] || "").trim();
-    });
-
-    return row;
+    const values = line.split(",");
+    let obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (values[i] || "").trim());
+    return obj;
   });
 }
 
-function showError(message) {
-  statusEl.textContent = message;
-  statusEl.classList.remove("hidden");
-  contentEl.classList.add("hidden");
-}
+async function load() {
+  const id = getId();
+  if (!id) return status.textContent = "Falta ?id=";
 
-function showContent() {
-  statusEl.classList.add("hidden");
-  contentEl.classList.remove("hidden");
-}
+  const res = await fetch(CSV_URL);
+  const txt = await res.text();
+  const rows = parseCSV(txt);
 
-function setButtonsDisabled(disabled) {
-  Object.values(buttons).forEach(button => {
-    button.disabled = disabled;
-  });
-}
+  const row = rows.find(r => r.identificador === id);
+  if (!row) return status.textContent = "ID no encontrado";
 
-function updateButtonStates() {
-  Object.entries(buttons).forEach(([key, button]) => {
-    button.classList.toggle("active", trackState[key].active);
-  });
-}
+  // contenido
+  titleEl.textContent = row["título"];
+  textEl.textContent = row["texto"];
 
-function getHeaders(row) {
-  return Object.keys(row || {});
-}
-
-function getRowValue(row, candidateNames) {
-  const headers = getHeaders(row);
-
-  for (const name of candidateNames) {
-    const found = headers.find(key => normalize(key) === normalize(name));
-    if (found) return row[found];
-  }
-
-  return "";
-}
-
-function findRowById(rows, requestedId) {
-  if (!rows.length) return null;
-
-  return rows.find(
-    row => normalize(row["Vals peruano"]) === normalize(requestedId)
-  ) || null;
-}
-
-function fillContent(row) {
-  const title = row["título"] || "";
-  const text = row["texto"] || "";
-  const image = row["imagen"] || "";
-
-  titleEl.textContent = title;
-  textEl.textContent = text;
-
-  if (image) {
-    imageEl.src = image;
-    imageEl.alt = title || text || "Imagen";
+  if (row["imagen"]) {
+    imageEl.src = row["imagen"];
     imageEl.classList.remove("hidden");
-  } else {
-    imageEl.classList.add("hidden");
-    imageEl.removeAttribute("src");
-  }
-}
-
-async function fetchCSVRows() {
-  const response = await fetch(CSV_URL, { cache: "no-store" });
-
-  if (!response.ok) {
-    throw new Error("No se pudo cargar el CSV");
   }
 
-  const csvText = await response.text();
-  return parseCSV(csvText);
+  content.classList.remove("hidden");
+  status.classList.add("hidden");
+
+  await setupAudio(row);
 }
 
-async function ensureAudioContext() {
-  if (!audioContext) {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  }
+async function setupAudio(row) {
+  ctx = new AudioContext();
 
-  if (audioContext.state === "suspended") {
-    await audioContext.resume();
-  }
-}
+  const urls = [row.audio_01, row.audio_02, row.audio_03];
 
-async function fetchAudioBuffer(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`No se pudo cargar el audio: ${url}`);
-  }
+  buffers = await Promise.all(
+    urls.map(async url => {
+      const res = await fetch(url);
+      const arr = await res.arrayBuffer();
+      return await ctx.decodeAudioData(arr);
+    })
+  );
 
-  const arrayBuffer = await response.arrayBuffer();
-  return await audioContext.decodeAudioData(arrayBuffer);
-}
+  duration = Math.min(...buffers.map(b => b.duration));
 
-async function loadAudioBuffers(row) {
-  const audioUrls = {
-    audio_01: row["audio_01"] || "",
-    audio_02: row["audio_02"] || "",
-    audio_03: row["audio_03"] || ""
-  };
-
-  for (const [key, url] of Object.entries(audioUrls)) {
-    if (!url) {
-      throw new Error(`Falta la URL de ${key}`);
-    }
-  }
-
-  const [buffer1, buffer2, buffer3] = await Promise.all([
-    fetchAudioBuffer(audioUrls.audio_01),
-    fetchAudioBuffer(audioUrls.audio_02),
-    fetchAudioBuffer(audioUrls.audio_03)
-  ]);
-
-  audioBuffers.audio_01 = buffer1;
-  audioBuffers.audio_02 = buffer2;
-  audioBuffers.audio_03 = buffer3;
-
-  const durations = [buffer1.duration, buffer2.duration, buffer3.duration];
-  masterClock.duration = Math.min(...durations);
-}
-
-function getCurrentMasterOffset() {
-  if (!masterClock.duration) return 0;
-
-  if (!masterClock.isRunning) {
-    return masterClock.pausedOffset % masterClock.duration;
-  }
-
-  const elapsed = audioContext.currentTime - masterClock.startContextTime;
-  return (masterClock.pausedOffset + elapsed) % masterClock.duration;
-}
-
-function startMasterClock() {
-  if (masterClock.isRunning) return;
-
-  masterClock.startContextTime = audioContext.currentTime;
-  masterClock.isRunning = true;
-}
-
-function pauseMasterClock() {
-  if (!masterClock.isRunning) return;
-
-  masterClock.pausedOffset = getCurrentMasterOffset();
-  masterClock.isRunning = false;
-}
-
-function stopTrackSource(trackKey) {
-  const state = trackState[trackKey];
-
-  if (state.source) {
-    try {
-      state.source.stop();
-    } catch (error) {
-      // Ignorar si ya estaba detenida
-    }
-
-    state.source.disconnect();
-    state.source = null;
-  }
-}
-
-function startTrackSource(trackKey, offset) {
-  const buffer = audioBuffers[trackKey];
-  if (!buffer) return;
-
-  stopTrackSource(trackKey);
-
-  const source = audioContext.createBufferSource();
-  source.buffer = buffer;
-  source.loop = true;
-  source.loopStart = 0;
-  source.loopEnd = masterClock.duration || buffer.duration;
-  source.connect(audioContext.destination);
-
-  source.start(0, offset);
-
-  trackState[trackKey].source = source;
-}
-
-function hasAnyActiveTrack() {
-  return Object.values(trackState).some(track => track.active);
-}
-
-function syncAllActiveTracks() {
-  const offset = getCurrentMasterOffset();
-
-  Object.keys(trackState).forEach(trackKey => {
-    if (trackState[trackKey].active) {
-      startTrackSource(trackKey, offset);
-    }
+  gains = buffers.map(() => {
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    g.connect(ctx.destination);
+    return g;
   });
+
+  bindButtons();
 }
 
-async function toggleTrack(trackKey) {
-  await ensureAudioContext();
+function startAll(offset = 0) {
+  sources = buffers.map((buf, i) => {
+    const s = ctx.createBufferSource();
+    s.buffer = buf;
+    s.loop = true;
+    s.loopEnd = duration;
+    s.connect(gains[i]);
+    s.start(0, offset);
+    return s;
+  });
 
-  const state = trackState[trackKey];
+  startTime = ctx.currentTime - offset;
+  started = true;
+}
 
-  if (!state.active) {
-    state.active = true;
+function stopAll() {
+  sources.forEach(s => s.stop());
+  sources = [];
+  started = false;
+}
 
-    if (!masterClock.isRunning) {
-      startMasterClock();
-    }
+function currentOffset() {
+  return (ctx.currentTime - startTime) % duration;
+}
 
-    const offset = getCurrentMasterOffset();
-    startTrackSource(trackKey, offset);
-  } else {
-    state.active = false;
-    stopTrackSource(trackKey);
-
-    if (!hasAnyActiveTrack()) {
-      pauseMasterClock();
-    }
+function toggle(i, button) {
+  if (!started) {
+    startAll(pausedOffset);
   }
 
-  updateButtonStates();
+  const g = gains[i];
+  const active = g.gain.value > 0;
+
+  if (active) {
+    g.gain.value = 0;
+    button.classList.remove("active");
+  } else {
+    g.gain.value = 1;
+    button.classList.add("active");
+  }
+
+  // si todas apagadas → parar
+  if (gains.every(g => g.gain.value === 0)) {
+    pausedOffset = currentOffset();
+    stopAll();
+  }
 }
 
 function bindButtons() {
-  buttons.audio_01.addEventListener("click", () => toggleTrack("audio_01"));
-  buttons.audio_02.addEventListener("click", () => toggleTrack("audio_02"));
-  buttons.audio_03.addEventListener("click", () => toggleTrack("audio_03"));
+  b1.onclick = () => toggle(0, b1);
+  b2.onclick = () => toggle(1, b2);
+  b3.onclick = () => toggle(2, b3);
 }
 
-async function init() {
-  setButtonsDisabled(true);
-
-  try {
-    const requestedId = getRequestedId();
-
-    if (!requestedId) {
-      showError("Falta el parámetro ?id=id_01");
-      return;
-    }
-
-    const rows = await fetchCSVRows();
-    const row = findRowById(rows, requestedId);
-
-    if (!row) {
-      showError(`No existe ninguna fila para ${requestedId}`);
-      return;
-    }
-
-    fillContent(row);
-    showContent();
-    bindButtons();
-
-    statusEl.textContent = "Toca una pista para cargar el audio";
-
-    await ensureAudioContext();
-    await loadAudioBuffers(row);
-
-    setButtonsDisabled(false);
-    statusEl.classList.add("hidden");
-  } catch (error) {
-    console.error(error);
-    showError("Error al cargar datos o audios");
-  }
-}
-
-init();
+load();
