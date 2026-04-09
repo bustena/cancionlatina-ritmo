@@ -139,12 +139,12 @@ function findRowById(rows, requestedId) {
 }
 
 function fillContent(row) {
-  const title = getRowValue(row, ["título", "titulo"]);
-  const text = getRowValue(row, ["texto"]);
-  const image = getRowValue(row, ["imagen"]);
+  const title = row["título"] || "";
+  const text = row["texto"] || "";
+  const image = row["imagen"] || "";
 
-  titleEl.textContent = title || "";
-  textEl.textContent = text || "";
+  titleEl.textContent = title;
+  textEl.textContent = text;
 
   if (image) {
     imageEl.src = image;
@@ -189,9 +189,9 @@ async function fetchAudioBuffer(url) {
 
 async function loadAudioBuffers(row) {
   const audioUrls = {
-    audio_01: getRowValue(row, ["audio_01"]),
-    audio_02: getRowValue(row, ["audio_02"]),
-    audio_03: getRowValue(row, ["audio_03"])
+    audio_01: row["audio_01"] || "",
+    audio_02: row["audio_02"] || "",
+    audio_03: row["audio_03"] || ""
   };
 
   for (const [key, url] of Object.entries(audioUrls)) {
