@@ -1,103 +1,81 @@
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSJM_fPxtlc5UEyNf0DHLNg5B4tGIm8Qbba3k78kbQDRj9a9jGpSDRHwz_UOgAz4jbpcRJKHEUe1eNY/pub?gid=1431457859&single=true&output=csv";
 
-const status = document.getElementById("status");
-const content = document.getElementById("content");
-
+const statusEl = document.getElementById("status");
+const contentEl = document.getElementById("content");
 const titleEl = document.getElementById("title");
 const textEl = document.getElementById("text");
 const imageEl = document.getElementById("image");
+const debugEl = document.getElementById("debug");
 
 const b1 = document.getElementById("b1");
 const b2 = document.getElementById("b2");
 const b3 = document.getElementById("b3");
 
-let ctx = null;
+let audioContext = null;
 let buffers = [null, null, null];
 let gains = [];
 let sources = [];
 
+let rowData = null;
+let duration = 0;
 let started = false;
 let startTime = 0;
 let pausedOffset = 0;
-let duration = 0;
-let rowData = null;
-let audioReady = false;
+let audioPrepared = false;
 
-function setStatus(message) {
-  status.textContent = message;
-  status.classList.remove("hidden");
+function getRequestedId() {
+  return (new URLSearchParams(window.location.search).get("id") || "").trim();
 }
 
-function hideStatus() {
-  status.classList.add("hidden");
+function setStatus(text) {
+  statusEl.textContent = text;
+  statusEl.classList.remove("hidden");
 }
 
-function getId() {
-  return (new URLSearchParams(location.search).get("id") || "").trim();
+function showContent() {
+  contentEl.classList.remove("hidden");
 }
 
-function parseCSVLine(line) {
-  const out = [];
-  let current = "";
-  let inQuotes = false;
+function debug(obj) {
+  debugEl.textContent =
+    typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+}
 
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    const next = line[i + 1];
+async function loadRowFromCSV() {
+  const requestedId = getRequestedId();
 
-    if (ch === '"') {
-      if (inQuotes && next === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === "," && !inQuotes) {
-      out.push(current);
-      current = "";
-    } else {
-      current += ch;
-    }
+  if (!requestedId) {
+    throw new Error("Falta ?id=id_01");
   }
 
-  out.push(current);
-  return out;
-}
+  const response = await fetch(CSV_URL, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("No se pudo cargar el CSV");
+  }
 
-function parseCSV(text) {
-  const cleaned = text.replace(/^\uFEFF/, "");
-  const lines = cleaned.split(/\r?\n/).filter(line => line.trim() !== "");
-  if (lines.length < 2) return [];
+  const csvText = await response.text();
 
-  const headers = parseCSVLine(lines[0]).map(h => h.trim());
-
-  return lines.slice(1).map(line => {
-    const cols = parseCSVLine(line);
-    const row = {};
-    headers.forEach((header, i) => {
-      row[header] = (cols[i] || "").trim();
-    });
-    return row;
+  const parsed = Papa.parse(csvText, {
+    header: true,
+    skipEmptyLines: true
   });
-}
 
-async function loadCSVRow() {
-  const id = getId();
-  if (!id) {
-    throw new Error("Falta el parámetro ?id=id_01");
+  if (parsed.errors.length) {
+    console.warn(parsed.errors);
   }
 
-  const res = await fetch(CSV_URL, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error("No se pudo leer el CSV");
-  }
+  const rows = parsed.data.map(row => {
+    const clean = {};
+    for (const key in row) {
+      clean[key.trim()] = typeof row[key] === "string" ? row[key].trim() : row[key];
+    }
+    return clean;
+  });
 
-  const txt = await res.text();
-  const rows = parseCSV(txt);
+  const row = rows.find(r => (r.identificador || "") === requestedId);
 
-  const row = rows.find(r => (r.identificador || "").trim() === id);
   if (!row) {
-    throw new Error(`No se encontró la fila con identificador ${id}`);
+    throw new Error(`No existe la fila ${requestedId}`);
   }
 
   return row;
@@ -109,83 +87,88 @@ function renderRow(row) {
 
   if (row["imagen"]) {
     imageEl.src = row["imagen"];
-    imageEl.alt = row["título"] || "Imagen";
     imageEl.classList.remove("hidden");
-  } else {
-    imageEl.classList.add("hidden");
-    imageEl.removeAttribute("src");
   }
 
-  content.classList.remove("hidden");
+  debug({
+    identificador: row["identificador"],
+    audio_01: row["audio_01"],
+    audio_02: row["audio_02"],
+    audio_03: row["audio_03"]
+  });
 }
 
 async function ensureAudioContext() {
-  if (!ctx) {
-    ctx = new AudioContext();
+  if (!audioContext) {
+    audioContext = new AudioContext();
   }
 
-  if (ctx.state === "suspended") {
-    await ctx.resume();
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
   }
 
   if (gains.length === 0) {
     gains = [0, 1, 2].map(() => {
-      const g = ctx.createGain();
-      g.gain.value = 0;
-      g.connect(ctx.destination);
-      return g;
+      const gain = audioContext.createGain();
+      gain.gain.value = 0;
+      gain.connect(audioContext.destination);
+      return gain;
     });
   }
 }
 
 async function fetchBuffer(url) {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`No se pudo descargar el audio: ${url}`);
+  const response = await fetch(url, { cache: "no-store", mode: "cors" });
+  if (!response.ok) {
+    throw new Error(`No se pudo cargar audio: ${url}`);
   }
 
-  const contentType = res.headers.get("content-type") || "";
-  if (!contentType.includes("audio") && !url.match(/\.(mp3|wav|ogg|m4a)(\?|$)/i)) {
-    console.warn("La URL no parece devolver audio directamente:", url, contentType);
-  }
-
-  const arr = await res.arrayBuffer();
-  return await ctx.decodeAudioData(arr);
+  const arrayBuffer = await response.arrayBuffer();
+  return await audioContext.decodeAudioData(arrayBuffer);
 }
 
-async function prepareAudioOnce() {
-  if (audioReady) return;
+async function prepareAudio() {
+  if (audioPrepared) return;
 
   await ensureAudioContext();
 
   const urls = [
-    rowData.audio_01,
-    rowData.audio_02,
-    rowData.audio_03
+    rowData["audio_01"],
+    rowData["audio_02"],
+    rowData["audio_03"]
   ];
 
-  if (urls.some(url => !url)) {
-    throw new Error("Falta alguna URL de audio en el CSV");
-  }
-
-  setStatus("Cargando audios...");
+  debug({
+    identificador: rowData["identificador"],
+    audio_01: urls[0],
+    audio_02: urls[1],
+    audio_03: urls[2]
+  });
 
   buffers = await Promise.all(urls.map(fetchBuffer));
   duration = Math.min(...buffers.map(b => b.duration));
 
-  if (!duration || !isFinite(duration)) {
-    throw new Error("No se pudo calcular la duración de los audios");
-  }
+  audioPrepared = true;
 
-  audioReady = true;
-  hideStatus();
+  b1.disabled = false;
+  b2.disabled = false;
+  b3.disabled = false;
 }
 
-function startAll(offset = 0) {
+function stopAll() {
+  sources.forEach(source => {
+    try { source.stop(); } catch (_) {}
+    try { source.disconnect(); } catch (_) {}
+  });
+  sources = [];
+  started = false;
+}
+
+function startAll(offset) {
   stopAll();
 
   sources = buffers.map((buffer, i) => {
-    const source = ctx.createBufferSource();
+    const source = audioContext.createBufferSource();
     source.buffer = buffer;
     source.loop = true;
     source.loopStart = 0;
@@ -195,55 +178,39 @@ function startAll(offset = 0) {
     return source;
   });
 
-  startTime = ctx.currentTime - offset;
+  startTime = audioContext.currentTime - offset;
   started = true;
-}
-
-function stopAll() {
-  sources.forEach(source => {
-    try {
-      source.stop();
-    } catch (_) {}
-    try {
-      source.disconnect();
-    } catch (_) {}
-  });
-
-  sources = [];
-  started = false;
 }
 
 function currentOffset() {
   if (!started) return pausedOffset;
-  return (ctx.currentTime - startTime) % duration;
+  return (audioContext.currentTime - startTime) % duration;
 }
 
-function anyTrackOn() {
+function anyOn() {
   return gains.some(g => g.gain.value > 0);
 }
 
-function updateButtonStates() {
+function updateButtons() {
   [b1, b2, b3].forEach((button, i) => {
-    const active = gains[i] && gains[i].gain.value > 0;
-    button.classList.toggle("active", active);
+    button.classList.toggle("active", gains[i].gain.value > 0);
   });
 }
 
 async function toggleTrack(index) {
   try {
-    await prepareAudioOnce();
+    await prepareAudio();
 
     if (!started) {
       startAll(pausedOffset);
     }
 
     const gain = gains[index];
-    const isOn = gain.gain.value > 0;
+    gain.gain.value = gain.gain.value > 0 ? 0 : 1;
 
-    gain.gain.value = isOn ? 0 : 1;
-    updateButtonStates();
+    updateButtons();
 
-    if (!anyTrackOn()) {
+    if (!anyOn()) {
       pausedOffset = currentOffset();
       stopAll();
     }
@@ -253,7 +220,7 @@ async function toggleTrack(index) {
   }
 }
 
-function bindButtons() {
+function bindEvents() {
   b1.addEventListener("click", () => toggleTrack(0));
   b2.addEventListener("click", () => toggleTrack(1));
   b3.addEventListener("click", () => toggleTrack(2));
@@ -262,13 +229,14 @@ function bindButtons() {
 async function init() {
   try {
     setStatus("Cargando datos...");
-    rowData = await loadCSVRow();
+    rowData = await loadRowFromCSV();
     renderRow(rowData);
-    bindButtons();
-    setStatus("Pulsa un botón para activar el audio");
+    bindEvents();
+    showContent();
+    setStatus("Pulsa un botón");
   } catch (error) {
     console.error(error);
-    setStatus(error.message || "Error al iniciar");
+    setStatus(error.message || "Error");
   }
 }
 
