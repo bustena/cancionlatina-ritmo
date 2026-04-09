@@ -1,37 +1,35 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>App Audio</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body>
+  <div class="app">
+    <div id="status">Cargando...</div>
 
-<div class="app">
-  <div id="status">Cargando...</div>
+    <div id="content" class="hidden">
+      <div class="layout">
+        <div class="left">
+          <h1 id="title"></h1>
+          <img id="image" class="hidden" alt="" />
+          <p id="text"></p>
+        </div>
 
-  <div id="content" class="hidden">
-    <div class="layout">
-
-      <!-- IZQUIERDA -->
-      <div class="left">
-        <h1 id="title"></h1>
-        <img id="image" class="hidden">
-        <p id="text"></p>
+        <div class="right">
+          <button id="b1" disabled>Pista 1</button>
+          <button id="b2" disabled>Pista 2</button>
+          <button id="b3" disabled>Pista 3</button>
+        </div>
       </div>
 
-      <!-- DERECHA -->
-      <div class="right">
-        <button id="b1">Pista 1</button>
-        <button id="b2">Pista 2</button>
-        <button id="b3">Pista 3</button>
-      </div>
-
+      <pre id="debug"></pre>
     </div>
   </div>
-</div>
 
-<script src="script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
