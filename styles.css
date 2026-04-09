@@ -2,104 +2,108 @@
   box-sizing: border-box;
 }
 
-:root {
-  --bg: #f7f7f7;
-  --card: #ffffff;
-  --text: #1f1f1f;
-  --muted: #666666;
-  --border: #dddddd;
-  --active: #1f1f1f;
-  --inactive: #ffffff;
-}
-
 body {
   margin: 0;
   font-family: Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  background: #ffffff;
+  color: #222;
 }
 
 .app {
-  max-width: 900px;
+  max-width: 1000px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 16px;
 }
 
 .status {
   text-align: center;
-  padding: 32px 16px;
-  font-size: 18px;
-  color: var(--muted);
+  padding: 24px;
 }
 
 .hidden {
   display: none;
 }
 
-.content {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
+/* LAYOUT PRINCIPAL */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 24px;
+  align-items: start;
+}
+
+/* IZQUIERDA */
+.left {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .title {
-  margin: 0 0 16px;
-  font-size: 32px;
+  margin: 0;
+  font-size: 26px;
   line-height: 1.2;
-  text-align: center;
 }
 
 .text {
-  margin: 0 0 24px;
-  font-size: 20px;
-  line-height: 1.5;
-  text-align: center;
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.4;
 }
 
+/* IMAGEN MÁS PEQUEÑA */
 .image {
-  display: block;
   width: 100%;
-  max-width: 100%;
+  max-width: 300px;   /* clave */
   height: auto;
-  border-radius: 12px;
-  margin: 0 auto 24px;
+  border-radius: 8px;
+}
+
+/* DERECHA */
+.right {
+  display: flex;
+  justify-content: center;
 }
 
 .controls {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-direction: column;
   gap: 12px;
+  width: 100%;
 }
 
+/* BOTONES */
 .track-button {
-  appearance: none;
-  border: 1px solid var(--text);
-  background: var(--inactive);
-  color: var(--text);
+  border: 1px solid #222;
+  background: #fff;
+  color: #222;
   border-radius: 999px;
-  padding: 12px 18px;
-  font-size: 16px;
+  padding: 12px;
+  font-size: 14px;
   cursor: pointer;
-  min-width: 120px;
-  transition: transform 0.08s ease, opacity 0.2s ease;
-}
-
-.track-button:hover {
-  transform: translateY(-1px);
-}
-
-.track-button:active {
-  transform: translateY(0);
 }
 
 .track-button.active {
-  background: var(--active);
-  color: #ffffff;
+  background: #222;
+  color: #fff;
 }
 
 .track-button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* RESPONSIVE */
+@media (max-width: 700px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .right {
+    margin-top: 16px;
+  }
+
+  .image {
+    max-width: 100%;
+  }
 }
