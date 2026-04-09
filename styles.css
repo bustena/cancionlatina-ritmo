@@ -1,18 +1,19 @@
 body {
   margin: 0;
-  font-family: Arial;
+  font-family: Arial, sans-serif;
 }
 
 .app {
   max-width: 900px;
-  margin: auto;
+  margin: 0 auto;
   padding: 16px;
 }
 
 .layout {
   display: grid;
-  grid-template-columns: 1fr 200px;
-  gap: 20px;
+  grid-template-columns: 1fr 220px;
+  gap: 24px;
+  align-items: start;
 }
 
 .left {
@@ -27,24 +28,38 @@ body {
   gap: 12px;
 }
 
-img {
-  max-width: 250px;
+#image {
+  max-width: 220px;
+  height: auto;
   border-radius: 8px;
 }
 
 button {
   padding: 12px;
-  border-radius: 20px;
-  border: 1px solid black;
-  background: white;
+  border: 1px solid #222;
+  border-radius: 999px;
+  background: #fff;
   cursor: pointer;
 }
 
 button.active {
-  background: black;
-  color: white;
+  background: #222;
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .hidden {
   display: none;
+}
+
+#debug {
+  margin-top: 20px;
+  padding: 12px;
+  background: #f4f4f4;
+  white-space: pre-wrap;
+  font-size: 12px;
 }
