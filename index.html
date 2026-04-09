@@ -1,28 +1,17 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Audio sincronizado desde CSV</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <main class="app">
-    <div id="status" class="status">Cargando...</div>
-
-    <section id="content" class="content hidden">
+<section id="content" class="content hidden">
+  <div class="layout">
+    <div class="left">
       <h1 id="title" class="title"></h1>
-      <p id="text" class="text"></p>
       <img id="image" class="image hidden" alt="" />
+      <p id="text" class="text"></p>
+    </div>
 
+    <div class="right">
       <div class="controls">
         <button id="btn-audio-1" class="track-button" type="button">Pista 1</button>
         <button id="btn-audio-2" class="track-button" type="button">Pista 2</button>
         <button id="btn-audio-3" class="track-button" type="button">Pista 3</button>
       </div>
-    </section>
-  </main>
-
-  <script src="script.js"></script>
-</body>
-</html>
+    </div>
+  </div>
+</section>
