@@ -119,19 +119,6 @@ function getHeaders(row) {
   return Object.keys(row || {});
 }
 
-function resolveIdKey(row) {
-  const headers = getHeaders(row);
-  const preferred = ["identificador", "id", "vals peruano"];
-
-  for (const key of headers) {
-    if (preferred.includes(normalize(key))) {
-      return key;
-    }
-  }
-
-  return headers[0] || null;
-}
-
 function getRowValue(row, candidateNames) {
   const headers = getHeaders(row);
 
@@ -146,12 +133,9 @@ function getRowValue(row, candidateNames) {
 function findRowById(rows, requestedId) {
   if (!rows.length) return null;
 
-  const idKey = resolveIdKey(rows[0]);
-  if (!idKey) return null;
-
-  return (
-    rows.find(row => normalize(row[idKey]) === normalize(requestedId)) || null
-  );
+  return rows.find(
+    row => normalize(row["Vals peruano"]) === normalize(requestedId)
+  ) || null;
 }
 
 function fillContent(row) {
