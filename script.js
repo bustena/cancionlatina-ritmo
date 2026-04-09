@@ -60,10 +60,6 @@ async function loadRowFromCSV() {
     skipEmptyLines: true
   });
 
-  if (parsed.errors.length) {
-    console.warn(parsed.errors);
-  }
-
   const rows = parsed.data.map(row => {
     const clean = {};
     for (const key in row) {
@@ -130,6 +126,8 @@ async function fetchBuffer(url) {
 async function prepareAudio() {
   if (audioPrepared) return;
 
+  setStatus("Cargando audios...");
+
   await ensureAudioContext();
 
   const urls = [
@@ -138,21 +136,11 @@ async function prepareAudio() {
     rowData["audio_03"]
   ];
 
-  debug({
-    identificador: rowData["identificador"],
-    audio_01: urls[0],
-    audio_02: urls[1],
-    audio_03: urls[2]
-  });
-
   buffers = await Promise.all(urls.map(fetchBuffer));
   duration = Math.min(...buffers.map(b => b.duration));
 
   audioPrepared = true;
-
-  b1.disabled = false;
-  b2.disabled = false;
-  b3.disabled = false;
+  setStatus("Pulsa una o varias pistas");
 }
 
 function stopAll() {
@@ -213,6 +201,9 @@ async function toggleTrack(index) {
     if (!anyOn()) {
       pausedOffset = currentOffset();
       stopAll();
+      setStatus("Todo en pausa");
+    } else {
+      setStatus("Reproduciendo");
     }
   } catch (error) {
     console.error(error);
@@ -233,7 +224,7 @@ async function init() {
     renderRow(rowData);
     bindEvents();
     showContent();
-    setStatus("Pulsa un botón");
+    setStatus("Pulsa una pista");
   } catch (error) {
     console.error(error);
     setStatus(error.message || "Error");
