@@ -1,83 +1,72 @@
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSJM_fPxtlc5UEyNf0DHLNg5B4tGIm8Qbba3k78kbQDRj9a9jGpSDRHwz_UOgAz4jbpcRJKHEUe1eNY/pub?gid=1431457859&single=true&output=csv";
 
-const statusEl = document.getElementById("status");
-const contentEl = document.getElementById("content");
+const status = document.getElementById("status");
+const content = document.getElementById("content");
+
 const titleEl = document.getElementById("title");
 const textEl = document.getElementById("text");
 const imageEl = document.getElementById("image");
-const debugEl = document.getElementById("debug");
 
 const b1 = document.getElementById("b1");
 const b2 = document.getElementById("b2");
 const b3 = document.getElementById("b3");
 
-let audioContext = null;
-let buffers = [null, null, null];
+let ctx;
+let buffers = [];
 let gains = [];
 let sources = [];
 
-let rowData = null;
+let rowData;
 let duration = 0;
+
 let started = false;
 let startTime = 0;
 let pausedOffset = 0;
-let audioPrepared = false;
 
-function getRequestedId() {
-  return (new URLSearchParams(window.location.search).get("id") || "").trim();
+let ready = false;
+
+function setStatus(t) {
+  status.textContent = t;
 }
 
-function setStatus(text) {
-  statusEl.textContent = text;
-  statusEl.classList.remove("hidden");
+function getId() {
+  return new URLSearchParams(location.search).get("id");
 }
 
-function showContent() {
-  contentEl.classList.remove("hidden");
-}
+/* ---------- CSV ---------- */
 
-function debug(obj) {
-  debugEl.textContent =
-    typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
-}
+function parseCSV(text) {
+  const lines = text.trim().split("\n");
+  const headers = lines[0].split(",");
 
-async function loadRowFromCSV() {
-  const requestedId = getRequestedId();
-
-  if (!requestedId) {
-    throw new Error("Falta ?id=id_01");
-  }
-
-  const response = await fetch(CSV_URL, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error("No se pudo cargar el CSV");
-  }
-
-  const csvText = await response.text();
-
-  const parsed = Papa.parse(csvText, {
-    header: true,
-    skipEmptyLines: true
+  return lines.slice(1).map(line => {
+    const values = line.split(",");
+    let obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (values[i] || "").trim());
+    return obj;
   });
+}
 
-  const rows = parsed.data.map(row => {
-    const clean = {};
-    for (const key in row) {
-      clean[key.trim()] = typeof row[key] === "string" ? row[key].trim() : row[key];
-    }
-    return clean;
-  });
+async function loadData() {
+  setStatus("Cargando datos...");
 
-  const row = rows.find(r => (r.identificador || "") === requestedId);
+  const id = getId();
+  if (!id) throw "Falta ?id=id_01";
 
-  if (!row) {
-    throw new Error(`No existe la fila ${requestedId}`);
-  }
+  const res = await fetch(CSV_URL);
+  const txt = await res.text();
+
+  const rows = parseCSV(txt);
+  const row = rows.find(r => r.identificador === id);
+
+  if (!row) throw "ID no encontrado";
 
   return row;
 }
 
-function renderRow(row) {
+/* ---------- RENDER ---------- */
+
+function render(row) {
   titleEl.textContent = row["título"] || "";
   textEl.textContent = row["texto"] || "";
 
@@ -86,93 +75,72 @@ function renderRow(row) {
     imageEl.classList.remove("hidden");
   }
 
-  debug({
-    identificador: row["identificador"],
-    audio_01: row["audio_01"],
-    audio_02: row["audio_02"],
-    audio_03: row["audio_03"]
-  });
+  content.classList.remove("hidden");
 }
 
-async function ensureAudioContext() {
-  if (!audioContext) {
-    audioContext = new AudioContext();
-  }
+/* ---------- AUDIO ---------- */
 
-  if (audioContext.state === "suspended") {
-    await audioContext.resume();
-  }
-
-  if (gains.length === 0) {
-    gains = [0, 1, 2].map(() => {
-      const gain = audioContext.createGain();
-      gain.gain.value = 0;
-      gain.connect(audioContext.destination);
-      return gain;
-    });
-  }
-}
-
-async function fetchBuffer(url) {
-  const response = await fetch(url, { cache: "no-store", mode: "cors" });
-  if (!response.ok) {
-    throw new Error(`No se pudo cargar audio: ${url}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  return await audioContext.decodeAudioData(arrayBuffer);
-}
-
-async function prepareAudio() {
-  if (audioPrepared) return;
-
+async function initAudio(row) {
   setStatus("Cargando audios...");
 
-  await ensureAudioContext();
+  ctx = new AudioContext();
 
-  const urls = [
-    rowData["audio_01"],
-    rowData["audio_02"],
-    rowData["audio_03"]
-  ];
+  const urls = [row.audio_01, row.audio_02, row.audio_03];
 
-  buffers = await Promise.all(urls.map(fetchBuffer));
+  buffers = await Promise.all(
+    urls.map(async url => {
+      const r = await fetch(url);
+      const arr = await r.arrayBuffer();
+      return await ctx.decodeAudioData(arr);
+    })
+  );
+
   duration = Math.min(...buffers.map(b => b.duration));
 
-  audioPrepared = true;
-  setStatus("Pulsa una o varias pistas");
+  gains = buffers.map(() => {
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    g.connect(ctx.destination);
+    return g;
+  });
+
+  ready = true;
+  setStatus("Listo");
+
+  enableButtons();
+}
+
+function enableButtons() {
+  [b1, b2, b3].forEach(b => b.disabled = false);
+}
+
+/* ---------- MOTOR ---------- */
+
+function startAll(offset = 0) {
+  sources = buffers.map((buf, i) => {
+    const s = ctx.createBufferSource();
+    s.buffer = buf;
+    s.loop = true;
+    s.loopEnd = duration;
+    s.connect(gains[i]);
+    s.start(0, offset);
+    return s;
+  });
+
+  startTime = ctx.currentTime - offset;
+  started = true;
 }
 
 function stopAll() {
-  sources.forEach(source => {
-    try { source.stop(); } catch (_) {}
-    try { source.disconnect(); } catch (_) {}
+  sources.forEach(s => {
+    try { s.stop(); } catch {}
   });
   sources = [];
   started = false;
 }
 
-function startAll(offset) {
-  stopAll();
-
-  sources = buffers.map((buffer, i) => {
-    const source = audioContext.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    source.loopStart = 0;
-    source.loopEnd = duration;
-    source.connect(gains[i]);
-    source.start(0, offset);
-    return source;
-  });
-
-  startTime = audioContext.currentTime - offset;
-  started = true;
-}
-
 function currentOffset() {
-  if (!started) return pausedOffset;
-  return (audioContext.currentTime - startTime) % duration;
+  return (ctx.currentTime - startTime) % duration;
 }
 
 function anyOn() {
@@ -180,55 +148,65 @@ function anyOn() {
 }
 
 function updateButtons() {
-  [b1, b2, b3].forEach((button, i) => {
-    button.classList.toggle("active", gains[i].gain.value > 0);
+  [b1, b2, b3].forEach((b, i) => {
+    b.classList.toggle("active", gains[i].gain.value > 0);
   });
 }
 
-async function toggleTrack(index) {
-  try {
-    await prepareAudio();
+/* ---------- INTERACCIÓN ---------- */
 
-    if (!started) {
-      startAll(pausedOffset);
-    }
+async function toggle(i) {
+  if (!ready) return;
 
-    const gain = gains[index];
-    gain.gain.value = gain.gain.value > 0 ? 0 : 1;
+  // primer gesto → activar audio
+  if (ctx.state === "suspended") {
+    await ctx.resume();
+  }
 
-    updateButtons();
+  if (!started) {
+    startAll(pausedOffset);
+  }
 
-    if (!anyOn()) {
-      pausedOffset = currentOffset();
-      stopAll();
-      setStatus("Todo en pausa");
-    } else {
-      setStatus("Reproduciendo");
-    }
-  } catch (error) {
-    console.error(error);
-    setStatus(error.message || "Error de audio");
+  const g = gains[i];
+  g.gain.value = g.gain.value > 0 ? 0 : 1;
+
+  updateButtons();
+
+  if (!anyOn()) {
+    pausedOffset = currentOffset();
+    stopAll();
+    setStatus("Pausa");
+  } else {
+    setStatus("Reproduciendo");
   }
 }
 
-function bindEvents() {
-  b1.addEventListener("click", () => toggleTrack(0));
-  b2.addEventListener("click", () => toggleTrack(1));
-  b3.addEventListener("click", () => toggleTrack(2));
+function bind() {
+  b1.onclick = () => toggle(0);
+  b2.onclick = () => toggle(1);
+  b3.onclick = () => toggle(2);
 }
+
+/* ---------- INIT ---------- */
 
 async function init() {
   try {
-    setStatus("Cargando datos...");
-    rowData = await loadRowFromCSV();
-    renderRow(rowData);
-    bindEvents();
-    showContent();
-    setStatus("Pulsa una pista");
-  } catch (error) {
-    console.error(error);
-    setStatus(error.message || "Error");
+    disableButtons();
+
+    rowData = await loadData();
+    render(rowData);
+    bind();
+
+    await initAudio(rowData);
+
+  } catch (e) {
+    console.error(e);
+    setStatus(e);
   }
+}
+
+function disableButtons() {
+  [b1, b2, b3].forEach(b => b.disabled = true);
 }
 
 init();
