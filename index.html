@@ -1,17 +1,37 @@
-<section id="content" class="content hidden">
-  <div class="layout">
-    <div class="left">
-      <h1 id="title" class="title"></h1>
-      <img id="image" class="image hidden" alt="" />
-      <p id="text" class="text"></p>
-    </div>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App Audio</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
 
-    <div class="right">
-      <div class="controls">
-        <button id="btn-audio-1" class="track-button" type="button">Pista 1</button>
-        <button id="btn-audio-2" class="track-button" type="button">Pista 2</button>
-        <button id="btn-audio-3" class="track-button" type="button">Pista 3</button>
+<div class="app">
+  <div id="status">Cargando...</div>
+
+  <div id="content" class="hidden">
+    <div class="layout">
+
+      <!-- IZQUIERDA -->
+      <div class="left">
+        <h1 id="title"></h1>
+        <img id="image" class="hidden">
+        <p id="text"></p>
       </div>
+
+      <!-- DERECHA -->
+      <div class="right">
+        <button id="b1">Pista 1</button>
+        <button id="b2">Pista 2</button>
+        <button id="b3">Pista 3</button>
+      </div>
+
     </div>
   </div>
-</section>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
