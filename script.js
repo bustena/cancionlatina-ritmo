@@ -1,7 +1,7 @@
 const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSJM_fPxtlc5UEyNf0DHLNg5B4tGIm8Qbba3k78kbQDRj9a9jGpSDRHwz_UOgAz4jbpcRJKHEUe1eNY/pub?gid=1431457859&single=true&output=csv";
 
-const status = document.getElementById("status");
-const content = document.getElementById("content");
+const statusEl = document.getElementById("status");
+const contentEl = document.getElementById("content");
 
 const titleEl = document.getElementById("title");
 const textEl = document.getElementById("text");
@@ -11,202 +11,318 @@ const b1 = document.getElementById("b1");
 const b2 = document.getElementById("b2");
 const b3 = document.getElementById("b3");
 
-let ctx;
-let buffers = [];
-let gains = [];
-let sources = [];
+let rowData = null;
 
-let rowData;
-let duration = 0;
-
-let started = false;
-let startTime = 0;
-let pausedOffset = 0;
-
+let players = [];
+let trackEnabled = [false, false, false];
 let ready = false;
 
-function setStatus(t) {
-  status.textContent = t;
+let duration = 0;
+let isRunning = false;
+let pausedOffset = 0;
+let masterStartPerf = 0;
+
+let syncTimer = null;
+
+function setStatus(message) {
+  statusEl.textContent = message;
 }
 
-function getId() {
-  return new URLSearchParams(location.search).get("id");
+function getRequestedId() {
+  return (new URLSearchParams(window.location.search).get("id") || "").trim();
 }
 
-/* ---------- CSV ---------- */
-
-function parseCSV(text) {
-  const lines = text.trim().split("\n");
-  const headers = lines[0].split(",");
-
-  return lines.slice(1).map(line => {
-    const values = line.split(",");
-    let obj = {};
-    headers.forEach((h, i) => obj[h.trim()] = (values[i] || "").trim());
-    return obj;
+function disableButtons() {
+  [b1, b2, b3].forEach(btn => {
+    btn.disabled = true;
   });
-}
-
-async function loadData() {
-  setStatus("Cargando datos...");
-
-  const id = getId();
-  if (!id) throw "Falta ?id=id_01";
-
-  const res = await fetch(CSV_URL);
-  const txt = await res.text();
-
-  const rows = parseCSV(txt);
-  const row = rows.find(r => r.identificador === id);
-
-  if (!row) throw "ID no encontrado";
-
-  return row;
-}
-
-/* ---------- RENDER ---------- */
-
-function render(row) {
-  titleEl.textContent = row["título"] || "";
-  textEl.textContent = row["texto"] || "";
-
-  if (row["imagen"]) {
-    imageEl.src = row["imagen"];
-    imageEl.classList.remove("hidden");
-  }
-
-  content.classList.remove("hidden");
-}
-
-/* ---------- AUDIO ---------- */
-
-async function initAudio(row) {
-  setStatus("Cargando audios...");
-
-  ctx = new AudioContext();
-
-  const urls = [row.audio_01, row.audio_02, row.audio_03];
-
-  buffers = await Promise.all(
-    urls.map(async url => {
-      const r = await fetch(url);
-      const arr = await r.arrayBuffer();
-      return await ctx.decodeAudioData(arr);
-    })
-  );
-
-  duration = Math.min(...buffers.map(b => b.duration));
-
-  gains = buffers.map(() => {
-    const g = ctx.createGain();
-    g.gain.value = 0;
-    g.connect(ctx.destination);
-    return g;
-  });
-
-  ready = true;
-  setStatus("Listo");
-
-  enableButtons();
 }
 
 function enableButtons() {
-  [b1, b2, b3].forEach(b => b.disabled = false);
-}
-
-/* ---------- MOTOR ---------- */
-
-function startAll(offset = 0) {
-  sources = buffers.map((buf, i) => {
-    const s = ctx.createBufferSource();
-    s.buffer = buf;
-    s.loop = true;
-    s.loopEnd = duration;
-    s.connect(gains[i]);
-    s.start(0, offset);
-    return s;
+  [b1, b2, b3].forEach(btn => {
+    btn.disabled = false;
   });
-
-  startTime = ctx.currentTime - offset;
-  started = true;
-}
-
-function stopAll() {
-  sources.forEach(s => {
-    try { s.stop(); } catch {}
-  });
-  sources = [];
-  started = false;
-}
-
-function currentOffset() {
-  return (ctx.currentTime - startTime) % duration;
-}
-
-function anyOn() {
-  return gains.some(g => g.gain.value > 0);
 }
 
 function updateButtons() {
-  [b1, b2, b3].forEach((b, i) => {
-    b.classList.toggle("active", gains[i].gain.value > 0);
+  [b1, b2, b3].forEach((btn, index) => {
+    btn.classList.toggle("active", trackEnabled[index]);
   });
 }
 
-/* ---------- INTERACCIÓN ---------- */
+function nowSeconds() {
+  return performance.now() / 1000;
+}
 
-async function toggle(i) {
+function getMasterOffset() {
+  if (!isRunning || duration <= 0) {
+    return pausedOffset;
+  }
+
+  return (nowSeconds() - masterStartPerf) % duration;
+}
+
+function allTracksOff() {
+  return trackEnabled.every(value => !value);
+}
+
+function pauseAllPlayers() {
+  players.forEach(player => {
+    player.pause();
+  });
+}
+
+function stopSyncTimer() {
+  if (syncTimer) {
+    clearInterval(syncTimer);
+    syncTimer = null;
+  }
+}
+
+function startSyncTimer() {
+  stopSyncTimer();
+
+  syncTimer = setInterval(() => {
+    if (!isRunning || duration <= 0) return;
+
+    const target = getMasterOffset();
+
+    players.forEach((player, index) => {
+      if (!trackEnabled[index]) return;
+      if (player.paused) return;
+
+      let diff = Math.abs(player.currentTime - target);
+
+      if (diff > duration / 2) {
+        diff = Math.abs(diff - duration);
+      }
+
+      if (diff > 0.08) {
+        player.currentTime = target;
+      }
+    });
+  }, 200);
+}
+
+function startClock(offset = 0) {
+  masterStartPerf = nowSeconds() - offset;
+  isRunning = true;
+  startSyncTimer();
+}
+
+function pauseClock() {
+  pausedOffset = getMasterOffset();
+  isRunning = false;
+  stopSyncTimer();
+}
+
+function syncAndPlayTrack(index) {
+  const player = players[index];
+  const offset = getMasterOffset();
+
+  player.currentTime = offset;
+  player.play().catch(error => {
+    console.error("Error al reproducir pista", index + 1, error);
+  });
+}
+
+function normalizeHeader(header) {
+  return header
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function mapRow(row) {
+  const normalized = {};
+
+  for (const key in row) {
+    normalized[normalizeHeader(key)] = String(row[key] || "").trim();
+  }
+
+  return {
+    identificador: normalized.identificador || "",
+    titulo: normalized.titulo || "",
+    texto: normalized.texto || "",
+    imagen: normalized.imagen || "",
+    audio_01: normalized.audio_01 || "",
+    audio_02: normalized.audio_02 || "",
+    audio_03: normalized.audio_03 || ""
+  };
+}
+
+function loadRowFromCSV() {
+  return new Promise((resolve, reject) => {
+    const requestedId = getRequestedId();
+
+    if (!requestedId) {
+      reject(new Error("Falta ?id=id_01"));
+      return;
+    }
+
+    Papa.parse(CSV_URL, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results) {
+        const rows = results.data.map(mapRow);
+        const row = rows.find(item => item.identificador === requestedId);
+
+        if (!row) {
+          reject(new Error(`No existe la fila ${requestedId}`));
+          return;
+        }
+
+        resolve(row);
+      },
+      error: function() {
+        reject(new Error("No se ha podido leer el CSV"));
+      }
+    });
+  });
+}
+
+function renderRow(row) {
+  titleEl.textContent = row.titulo || "";
+  textEl.textContent = row.texto || "";
+
+  if (row.imagen) {
+    imageEl.src = row.imagen;
+    imageEl.alt = row.titulo || "Imagen";
+    imageEl.classList.remove("hidden");
+  } else {
+    imageEl.classList.add("hidden");
+  }
+
+  contentEl.classList.remove("hidden");
+}
+
+function waitForPlayer(player) {
+  return new Promise((resolve, reject) => {
+    const onReady = () => {
+      cleanup();
+      resolve(player);
+    };
+
+    const onError = () => {
+      cleanup();
+      reject(new Error(`No se pudo cargar ${player.src}`));
+    };
+
+    const cleanup = () => {
+      player.removeEventListener("canplaythrough", onReady);
+      player.removeEventListener("loadedmetadata", onReady);
+      player.removeEventListener("error", onError);
+    };
+
+    player.addEventListener("canplaythrough", onReady, { once: true });
+    player.addEventListener("loadedmetadata", onReady, { once: true });
+    player.addEventListener("error", onError, { once: true });
+
+    player.load();
+  });
+}
+
+async function preparePlayers(row) {
+  const urls = [row.audio_01, row.audio_02, row.audio_03];
+
+  if (urls.some(url => !url)) {
+    throw new Error("Falta alguna URL de audio");
+  }
+
+  players = urls.map(url => {
+    const audio = new Audio();
+    audio.src = url;
+    audio.preload = "auto";
+    audio.loop = true;
+    audio.playsInline = true;
+    return audio;
+  });
+
+  await Promise.all(players.map(waitForPlayer));
+
+  const durations = players
+    .map(player => Number(player.duration))
+    .filter(value => Number.isFinite(value) && value > 0);
+
+  if (!durations.length) {
+    throw new Error("No se pudo leer la duración de los audios");
+  }
+
+  duration = Math.min(...durations);
+  ready = true;
+}
+
+function toggleTrack(index) {
   if (!ready) return;
 
-  // primer gesto → activar audio
-  if (ctx.state === "suspended") {
-    await ctx.resume();
+  const wasEnabled = trackEnabled[index];
+  trackEnabled[index] = !wasEnabled;
+
+  if (trackEnabled[index]) {
+    if (!isRunning) {
+      startClock(pausedOffset);
+    }
+
+    syncAndPlayTrack(index);
+  } else {
+    players[index].pause();
   }
 
-  if (!started) {
-    startAll(pausedOffset);
-  }
-
-  const g = gains[i];
-  g.gain.value = g.gain.value > 0 ? 0 : 1;
-
-  updateButtons();
-
-  if (!anyOn()) {
-    pausedOffset = currentOffset();
-    stopAll();
+  if (allTracksOff()) {
+    pauseClock();
+    pauseAllPlayers();
     setStatus("Pausa");
   } else {
+    const target = getMasterOffset();
+
+    players.forEach((player, i) => {
+      if (!trackEnabled[i]) return;
+
+      const diff = Math.abs(player.currentTime - target);
+      if (diff > 0.08) {
+        player.currentTime = target;
+      }
+
+      if (player.paused) {
+        player.play().catch(error => {
+          console.error("Error al reanudar pista", i + 1, error);
+        });
+      }
+    });
+
     setStatus("Reproduciendo");
   }
+
+  updateButtons();
 }
 
-function bind() {
-  b1.onclick = () => toggle(0);
-  b2.onclick = () => toggle(1);
-  b3.onclick = () => toggle(2);
+function bindEvents() {
+  b1.addEventListener("click", () => toggleTrack(0));
+  b2.addEventListener("click", () => toggleTrack(1));
+  b3.addEventListener("click", () => toggleTrack(2));
 }
-
-/* ---------- INIT ---------- */
 
 async function init() {
   try {
     disableButtons();
+    setStatus("Cargando datos...");
 
-    rowData = await loadData();
-    render(rowData);
-    bind();
+    rowData = await loadRowFromCSV();
+    renderRow(rowData);
 
-    await initAudio(rowData);
+    setStatus("Cargando audios...");
+    await preparePlayers(rowData);
 
-  } catch (e) {
-    console.error(e);
-    setStatus(e);
+    bindEvents();
+    enableButtons();
+    updateButtons();
+    setStatus("Listo");
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || "Error");
   }
-}
-
-function disableButtons() {
-  [b1, b2, b3].forEach(b => b.disabled = true);
 }
 
 init();
